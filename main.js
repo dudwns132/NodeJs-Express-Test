@@ -6,6 +6,11 @@ var bodyParser = require('body-parser')
 var compression = require('compression')
 var indexRouter = require('./routes/index');
 var topicRouter = require('./routes/topic');
+var helmet = require('helmet');
+
+// 보안과 관련해서 여러가지 단골손님 보안이유 자동으로 해결해주는 모듈
+app.use(helmet())
+
 
 //정적인 파일: 이미지파일, 자바스크립트파일 css파일을 웹브라우저로 다운로드 시켜주는 경우
 //public 파일안에서 정적파일을찾겠다라는 의미
