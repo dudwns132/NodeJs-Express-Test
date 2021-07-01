@@ -2,130 +2,73 @@ var express = require('express')
 var app = express()
 var fs = require('fs');
 var bodyParser = require('body-parser')
-var qs = require('querystring');
+//var qs = require('querystring');
 var compression = require('compression')
-var path = require('path');
-var sanitizeHtml = require('sanitize-html');
-var template = require('./lib/template.js');
+var indexRouter = require('./routes/index');
+var topicRouter = require('./routes/topic');
 
+//정적인 파일: 이미지파일, 자바스크립트파일 css파일을 웹브라우저로 다운로드 시켜주는 경우
+//public 파일안에서 정적파일을찾겠다라는 의미
+app.use(express.static('public'))
+
+//Third-party middleware
 app.use(bodyParser.urlencoded({
   extended: false
 }));
 app.use(compression());
-app.use(function (request, response, next) {
+
+//미들웨어로서 등록, 핵심:req, res객체를 받아서 변형할수있다.
+//next호출을 통해 그다음에 실행되어야할 미들웨어를 실행할지 실행하지 않을지 그 미들웨어의 이전미들웨어가 결정하도록한다.
+app.use(function (req, res, next) {
+  console.log('Time: ', Date.now())
+  next()
+})
+
+//미들웨어 : 소프트웨어를 만들때 다른사람또는 자신이 만든 소프트웨어를 부품으로해서 나의 소프트웨어를 만들어감(생산성△)
+
+//use, get, post 등의 방법으로 미들웨어 등록가능(애플리케이션 레벨 미들웨어)
+
+// 함수가 처음에 실행이 되고 그 함수안에서 next를 호출하면 밑에 있는 미들웨어를 실행
+app.use('/user/:id', function (req, res, next) {
+  console.log('Request URL:', req.originalUrl)
+  next()
+}, function (req, res, next) {
+  console.log('Request Type:', req.method)
+  next()
+})
+
+//express에서 사용되는 모든것이 미들웨어라고 할수있다 
+
+//애플리케이션이 구동될때 순서대로 등록되있는 프로그램들이 실행되는데 그 각각의 프로그램들이 서로와 서로를 연결해주는 작은 소프트웨어라는 점...?
+
+// 특정경로에만 미들웨어가 동작할수 있도록 설정 가능
+app.use('/user/:id', function (req, res, next) {
+  console.log('Request Type:', req.method)
+  next()
+})
+// 들어오는 모든 요청이 아닌 get방식으로 들어오는 요청에 대해서만 파일 목록을 가져옴
+app.get('*', function (request, response, next) {
   fs.readdir('./data', function (error, filelist) {
     request.list = filelist
     next()
   });
 })
 
-app.get('/', function (request, response) {
-  var title = 'Welcome';
-  var description = 'Hello Node.js!!!!';
-  var list = template.list(request.list);
-  var html = template.HTML(title, list,
-    `<h2>${title}</h2>${description}`,
-    `<a href="/create">create</a>`
-  );
-  response.send(html);
+app.use('/', indexRouter);
+
+// '/topic'으로 시작하는 주소들에게 topicRouter이라고 하는 미들웨어를 적용하겠다.
+app.use('/topic', topicRouter);
+
+
+//404응답 처리, 미들웨어는 순차적으로 실행하기 때문에 더이상 실행하지 못하고 여기까지 오면 못찾은것을 의미 그때 404status를 보냄
+app.use(function (req, res, next) {
+  res.status(404).send('Sorry cant find that!');
 });
 
-app.get('/page/:pageId', function (request, response) {
-  var filteredId = path.parse(request.params.pageId).base;
-  fs.readFile(`data/${filteredId}`, 'utf8', function (err, description) {
-    var title = request.params.pageId;
-    var sanitizedTitle = sanitizeHtml(title);
-    var sanitizedDescription = sanitizeHtml(description, {
-      allowedTags: ['h1']
-    });
-    var list = template.list(request.list);
-    var html = template.HTML(sanitizedTitle, list,
-      `<h2>${sanitizedTitle}</h2>${sanitizedDescription}`,
-      ` <a href="/create">create</a>
-          <a href="/update/${title}">update</a>
-          <form action="/delete_process" method="post">
-            <input type="hidden" name="id" value="${sanitizedTitle}">
-            <input type="submit" value="delete">
-          </form>`
-    );
-    response.send(html);
-  });
-});
-
-app.get('/create', function (request, response) {
-  var title = 'WEB - create';
-  var list = template.list(request.list);
-  var html = template.HTML(title, list, `
-      <form action="/create_process" method="post">
-        <p><input type="text" name="title" placeholder="title"></p>
-        <p>
-          <textarea name="description" placeholder="description"></textarea>
-        </p>
-        <p>
-          <input type="submit">
-        </p>
-      </form>
-    `, '');
-  response.send(html);
-})
-
-app.post('/create_process', function (request, response) {
-  var post = request.body;
-  var title = post.title;
-  var description = post.description;
-  fs.writeFile(`data/${title}`, description, 'utf8', function (err) {
-    response.writeHead(302, {
-      Location: `/?id=${title}`
-    });
-    response.end();
-  })
-})
-
-app.get('/update/:pageId', function (request, response) {
-  fs.readdir('./data', function (error, filelist) {
-    var filteredId = path.parse(request.params.pageId).base;
-    fs.readFile(`data/${filteredId}`, 'utf8', function (err, description) {
-      var title = request.params.pageId;
-      var list = template.list(filelist);
-      var html = template.HTML(title, list,
-        `
-        <form action="/update_process" method="post">
-          <input type="hidden" name="id" value="${title}">
-          <p><input type="text" name="title" placeholder="title" value="${title}"></p>
-          <p>
-            <textarea name="description" placeholder="description">${description}</textarea>
-          </p>
-          <p>
-            <input type="submit">
-          </p>
-        </form>
-        `,
-        `<a href="/create">create</a> <a href="/update?id=${title}">update</a>`
-      );
-      response.send(html);
-    });
-  });
-})
-
-app.post('/update_process', function (request, response) {
-  var post = request.body;
-  var id = post.id;
-  var title = post.title;
-  var description = post.description;
-  fs.rename(`data/${id}`, `data/${title}`, function (error) {
-    fs.writeFile(`data/${title}`, description, 'utf8', function (err) {
-      response.redirect(`/page/${title}`)
-    })
-  });
-})
-
-app.post('/delete_process', function (request, response) {
-  var post = request.body;
-  var id = post.id;
-  var filteredId = path.parse(id).base;
-  fs.unlink(`data/${filteredId}`, function (error) {
-    response.redirect('/')
-  })
+//err handler를 위한 미들웨어
+app.use(function (err, req, res, next) {
+  console.error(err.stack)
+  res.status(500).send('Something broke!')
 })
 
 app.listen(3003, function () {
